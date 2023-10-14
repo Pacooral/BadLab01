@@ -1,22 +1,15 @@
-//监听8080端口，监听来自浏览器的访问请求
-//接收到浏览器对远程网站的浏览请求后，在VServer的缓存中检索URL对应的对象
-//如果缓存中存在该对象，提取对象文件的最新修改时间，并在客户的请求报文首部插入If-Modified-Since字段，并向原Web服务器转发修改后的请求报文
-//如果缓存中没有该对象，则会直接向源服务器转发请求报文，并将源服务器返回的响应报文转发给客户端，同时将响应报文中的对象文件缓存到VServer的缓存中
-
-
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Scanner;
 
-public class VServer1 {
+public class VServer3 {
     public static void main(String[] args) throws IOException {
         int port = 8080;
         ServerSocket server = new ServerSocket(port);
         System.out.println("服务器正在监听端口：" + port);
         System.out.println("服务器正在运行...");
-        //System.out.println(server.getInetAddress().getLocalHost());
-        //在此处可以对访问IP进行限制
+
         int index = 0;
         while(true){
             index++;
@@ -92,14 +85,16 @@ public class VServer1 {
                         body;
                 out.write(response.getBytes());
                 out.flush();
+                in.close();
+                out.close();
                 accept.close();
                 continue;
             }
             if (dstaddr.contains("pacooral.cn")){
                 System.out.println("本次请求的是pacooral.cn的网站");
                 System.out.println("即将为你转到今日哈工大主页！");
-                dstaddr = "hit.edu.cn";
-                dsthost = "hit.edu.cn";
+                dstaddr = "today.hit.edu.cn";
+                dsthost = "today.hit.edu.cn";
                 dstPort = 80;
                 header = new StringBuilder("GET http://today.hit.edu.cn/ HTTP/1.1\n" +
                         "Host: today.hit.edu.cn\n" +
@@ -161,98 +156,47 @@ public class VServer1 {
                         proxyOut.write(buffer.toString().getBytes());
                         proxyOut.flush();
                         //接收目标服务器的响应
-                        byte[] bytes = new byte[1024];
-                        int len = proxyIn.read(bytes);
-                        String response = new String(bytes, 0, len);
-                        System.out.println(response);
-                        if(response.contains("304")){
-                            System.out.println("缓存中的文件是最新的,可以直接使用");
-                            //缓存中的文件是最新的
-                            //向客户端发送响应
-                            BufferedInputStream inputStream = new BufferedInputStream(new FileInputStream(file));
-                            byte[] buffer1 = new byte[1024];
-                            int len1 = 0;
-                            while ((len1 = inputStream.read(buffer1)) != -1) {
-                                out.write(buffer1, 0, len1);
-                            }
-                            inputStream.close();
-                            out.flush();
-                            out.close();
-                        } else {
-                            System.out.println("缓存中的文件不是最新的");
-                            //缓存中的文件不是最新的
-                            //向客户端发送响应
-                            proxyOut.write(header.toString().getBytes());
-                            proxyOut.flush();
-                            socket.shutdownOutput();
-                            //接收目标服务器的响应
-                            //缓存
-                            FileOutputStream outputStream = new FileOutputStream(file);
-                            BufferedInputStream inputStream = new BufferedInputStream(proxyIn);
-                            byte[] buffer2 = new byte[1024];
-                            int len2 = 0;
-                            while ((len2 = inputStream.read(buffer2)) != -1) {
-                                out.write(buffer2, 0, len2);
-                                outputStream.write(buffer2, 0, len2);
-                            }
-                            inputStream.close();
-                            outputStream.flush();
-                            outputStream.close();
-                            out.flush();
-                            out.close();
+                        byte[] bufferBytes = new byte[1024];
+                        int len;
+                        StringBuilder response = new StringBuilder();
+                        while ((len = proxyIn.read(bufferBytes)) != -1){
+                            response.append(new String(bufferBytes, 0, len));
                         }
-                    }else {
+                        //将目标服务器的响应发送给客户端
+                        out.write(response.toString().getBytes());
+                        out.flush();
+                    } else {
+                        System.out.println("缓存中不存在"+dstaddr+"的文件");
+                        //缓存中不存在该文件，需要创建文件
+                        file.createNewFile();
+                        FileOutputStream fileOutputStream = new FileOutputStream(file);
+                        //向目标服务器发送请求
                         proxyOut.write(header.toString().getBytes());
                         proxyOut.flush();
                         socket.shutdownOutput();
                         //接收目标服务器的响应
-                        //缓存
-                        System.out.println("缓存中不存在"+requestUrl+"的文件");
-                        file.createNewFile();
-                        FileOutputStream outputStream = new FileOutputStream(file);
-                        BufferedInputStream inputStream = new BufferedInputStream(proxyIn);
-                        byte[] buffer = new byte[1024];
-                        int len = 0;
-                        while ((len = inputStream.read(buffer)) != -1) {
-                            out.write(buffer, 0, len);
-                            outputStream.write(buffer, 0, len);
+                        byte[] bufferBytes = new byte[1024];
+                        int len;
+                        while ((len = proxyIn.read(bufferBytes)) != -1){
+                            fileOutputStream.write(bufferBytes, 0, len);
                         }
-                        inputStream.close();
-                        outputStream.flush();
-                        outputStream.close();
-                        out.flush();
-                        out.close();
+                        fileOutputStream.close();
+                        //将目标服务器的响应发送给客户端
+                        FileInputStream fileInputStream = new FileInputStream(file);
+                        byte[] fileBytes = new byte[1024];
+                        while ((len = fileInputStream.read(fileBytes)) != -1){
+                            out.write(fileBytes, 0, len);
+                        }
+                        fileInputStream.close();
                     }
                 }
-            } else {
-                System.out.println("请求xxxxxxxxxxxxx");
-                Socket proxy = new Socket(dsthost,dstPort);
-                OutputStream proxyOut = proxy.getOutputStream();
-                InputStream proxyIn = proxy.getInputStream();
-                //向目标服务器发送请求
-                proxyOut.write(header.toString().getBytes());
-                proxyOut.flush();
-                proxy.shutdownOutput();
-                //接收目标服务器的响应
-                BufferedInputStream inputStream = new BufferedInputStream(proxyIn);
-                byte[] buffer = new byte[1024];
-                int len = 0;
-                while ((len = inputStream.read(buffer)) != -1) {
-                    out.write(buffer, 0, len);
-                }
-                inputStream.close();
-                out.flush();
-                out.close();
+                proxyIn.close();
+                proxyOut.close();
+                socket.close();
             }
+            in.close();
+            out.close();
             accept.close();
-            //休息5s继续下一次
-            try {
-                Thread.sleep(20000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
         }
-
     }
 }
-

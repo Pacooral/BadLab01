@@ -20,7 +20,15 @@ public class VServer {
             while (true) {
                 Socket clientSocket = serverSocket.accept();
                 System.out.println("Accepted connection from " + clientSocket.getInetAddress());
+                if (clientSocket.getInetAddress().toString().equals("http://today.hit.edu.cn/article/2023/10/13/107918")){
+                    System.out.println("拒绝访问");
+                    continue;
+                }
+                if (clientSocket.getInetAddress().toString().contains("http://www.wenku8.net/")){
+                    //跳转到其他网站
+                    System.out.println("跳转到其他网站");
 
+                }
                 Thread thread = new Thread(() -> handleRequest(clientSocket));
                 thread.start();
             }
@@ -47,7 +55,8 @@ public class VServer {
                     Date lastModified = new Date(cachedFile.lastModified());
                     SimpleDateFormat format = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz");
                     String ifModifiedSince = format.format(lastModified);
-
+                    System.out.println("lastModified: " + lastModified);
+                    System.out.println("If-Modified-Since: " + ifModifiedSince);
                     Socket webServerSocket = new Socket(new URL(url).getHost(), 80);
                     BufferedWriter webServerWriter = new BufferedWriter(new OutputStreamWriter(webServerSocket.getOutputStream()));
 
@@ -59,10 +68,25 @@ public class VServer {
 
                     BufferedReader webServerReader = new BufferedReader(new InputStreamReader(webServerSocket.getInputStream()));
                     String response;
-                    while ((response = webServerReader.readLine()) != null) {
+                    //如果返回消息是304，那么就不用再次请求了
+                    if ((response = webServerReader.readLine()).contains("304")) {
+                        System.out.println("缓存是最新的不需要修改");
+                        BufferedReader fileReader = new BufferedReader(new InputStreamReader(new FileInputStream(cachedFile)));
+                        while ((response = fileReader.readLine()) != null) {
+                            writer.write(response + "\r\n");
+                        }
+                    }else {
+                        //否则就把缓存文件的内容更新并返回给客户端
+                        System.out.println("缓存需要被更新");
+                        FileOutputStream fileoutputStream = new FileOutputStream(new File("cache/" + url.hashCode()));
                         writer.write(response + "\r\n");
+                        fileoutputStream.write(response.getBytes());
+                        while ((response = webServerReader.readLine()) != null) {
+                            writer.write(response + "\r\n");
+                            fileoutputStream.write(response.getBytes());
+                        }
+                        fileoutputStream.close();
                     }
-
                     webServerReader.close();
                     webServerWriter.close();
                     webServerSocket.close();
